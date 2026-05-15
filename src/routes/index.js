@@ -1,0 +1,32 @@
+import { Router } from "express";
+import { authRouter } from "./auth.routes.js";
+import { taskRouter } from "./task.routes.js";
+import { expenseRouter } from "./expense.routes.js";
+import { salesRouter } from "./sales.routes.js";
+import { dashboardRouter } from "./dashboard.routes.js";
+import { financeRouter } from "./finance.routes.js";
+import { documentRouter } from "./document.routes.js";
+import { notificationRouter } from "./notification.routes.js";
+import { employeeRouter } from "./employee.routes.js";
+import { meetingRouter } from "./meeting.routes.js";
+import { visitorRouter } from "./visitor.routes.js";
+import { operationRouter } from "./operation.routes.js";
+import { activityRouter } from "./activity.routes.js";
+import { calendarRouter } from "./calendar.routes.js";
+
+export const apiRouter = Router();
+
+apiRouter.use("/auth", authRouter);
+apiRouter.use("/tasks", taskRouter);
+apiRouter.use("/expenses", expenseRouter);
+apiRouter.use("/sales", salesRouter);
+apiRouter.use("/dashboard", dashboardRouter);
+apiRouter.use("/finance", financeRouter);
+apiRouter.use("/documents", documentRouter);
+apiRouter.use("/notifications", notificationRouter);
+apiRouter.use("/employees", employeeRouter);
+apiRouter.use("/meetings", meetingRouter);
+apiRouter.use("/visitors", visitorRouter);
+apiRouter.use("/operations", operationRouter);
+apiRouter.use("/activity", activityRouter);
+apiRouter.use("/calendar", calendarRouter);
