@@ -6,7 +6,11 @@ import { apiSuccess } from "../utils/apiResponse.js";
 import { paginateQuery } from "../utils/pagination.js";
 import { ApiError } from "../utils/ApiError.js";
 import { logActivity } from "../services/activity-log.service.js";
-import { createInvoiceSchema, recordInvoicePaymentSchema } from "../validators/finance.js";
+import {
+  createInvoiceSchema,
+  recordInvoicePaymentSchema,
+  updateInvoiceSchema
+} from "../validators/finance.js";
 
 function computeTotals(items, gstPercent) {
   const subtotal = items.reduce((sum, row) => sum + row.quantity * row.rate, 0);
@@ -15,12 +19,21 @@ function computeTotals(items, gstPercent) {
   return { subtotal, gstAmount, total };
 }
 
+function applyManualInvoiceStatus(inv, status) {
+  inv.status = status;
+  if (status === "Paid") {
+    inv.paidAmount = inv.total;
+  } else if (status === "Unpaid" || status === "Pending" || status === "Overdue") {
+    inv.paidAmount = 0;
+  }
+}
+
 function applyInvoiceStatus(inv) {
   const now = new Date();
   if (inv.paidAmount >= inv.total && inv.total > 0) inv.status = "Paid";
   else if (inv.paidAmount > 0) inv.status = "Partially Paid";
   else if (new Date(inv.dueDate) < now) inv.status = "Overdue";
-  else inv.status = "Unpaid";
+  else inv.status = "Pending";
 }
 
 export async function listInvoices(req, res) {
@@ -60,7 +73,7 @@ export async function createInvoice(req, res) {
     gstAmount,
     total,
     paidAmount: 0,
-    status: "Unpaid",
+    status: "Pending",
     pdfUrl: "",
     billingAddress: parsed.data.billingAddress ?? "",
     shipToGstin: parsed.data.shipToGstin ?? "",
@@ -80,6 +93,75 @@ export async function createInvoice(req, res) {
   });
 
   return res.status(201).json(apiSuccess(inv, "Invoice created"));
+}
+
+export async function updateInvoice(req, res) {
+  const parsed = updateInvoiceSchema.safeParse(req.body);
+  if (!parsed.success) throw new ApiError(400, "Invalid invoice", parsed.error.flatten());
+
+  const inv = await InvoiceModel.findById(req.params.invoiceId);
+  if (!inv) throw new ApiError(404, "Invoice not found");
+
+  const before = inv.toObject();
+  const manualStatus = parsed.data.status;
+  const statusOnly =
+    manualStatus !== undefined &&
+    Object.keys(parsed.data).filter((k) => parsed.data[k] !== undefined).length === 1;
+
+  if (statusOnly) {
+    applyManualInvoiceStatus(inv, manualStatus);
+    await inv.save();
+    await logActivity({
+      actorUserId: req.user.id,
+      action: "finance.invoice.update",
+      entityType: "Invoice",
+      entityId: inv._id.toString(),
+      before,
+      after: inv.toObject(),
+      metadata: { statusOnly: true, status: manualStatus }
+    });
+    return res.json(apiSuccess(inv, "Status updated"));
+  }
+
+  if (parsed.data.clientId) {
+    const client = await ClientModel.findById(parsed.data.clientId);
+    if (!client) throw new ApiError(404, "Client not found");
+    inv.clientId = new mongoose.Types.ObjectId(parsed.data.clientId);
+  }
+
+  if (parsed.data.issueDate) inv.issueDate = new Date(parsed.data.issueDate);
+  if (parsed.data.dueDate) inv.dueDate = new Date(parsed.data.dueDate);
+  if (parsed.data.items) inv.items = parsed.data.items;
+  if (parsed.data.gstPercent !== undefined) inv.gstPercent = parsed.data.gstPercent;
+  if (parsed.data.billingAddress !== undefined) inv.billingAddress = parsed.data.billingAddress;
+  if (parsed.data.shipToGstin !== undefined) inv.shipToGstin = parsed.data.shipToGstin;
+  if (parsed.data.shipFromGstin !== undefined) inv.shipFromGstin = parsed.data.shipFromGstin;
+
+  const gstPercent = inv.gstPercent ?? 0;
+  const { subtotal, gstAmount, total } = computeTotals(inv.items, gstPercent);
+  inv.subtotal = subtotal;
+  inv.gstAmount = gstAmount;
+  inv.total = total;
+
+  if (manualStatus !== undefined) {
+    applyManualInvoiceStatus(inv, manualStatus);
+  } else {
+    if (inv.paidAmount > inv.total) inv.paidAmount = inv.total;
+    applyInvoiceStatus(inv);
+  }
+
+  await inv.save();
+
+  await logActivity({
+    actorUserId: req.user.id,
+    action: "finance.invoice.update",
+    entityType: "Invoice",
+    entityId: inv._id.toString(),
+    before,
+    after: inv.toObject()
+  });
+
+  return res.json(apiSuccess(inv, "Invoice updated"));
 }
 
 export async function recordInvoicePayment(req, res) {
@@ -138,7 +220,11 @@ export async function getFinanceSummary(_req, res) {
           _id: null,
           unpaid: {
             $sum: {
-              $cond: [{ $in: ["$status", ["Unpaid", "Partially Paid"]] }, { $subtract: ["$total", "$paidAmount"] }, 0]
+              $cond: [
+                { $in: ["$status", ["Pending", "Unpaid", "Partially Paid", "Overdue"]] },
+                { $subtract: ["$total", "$paidAmount"] },
+                0
+              ]
             }
           },
           invoiced: { $sum: "$total" },

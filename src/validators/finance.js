@@ -18,6 +18,12 @@ export const createInvoiceSchema = z.object({
   shipFromGstin: z.string().optional()
 });
 
+const invoiceStatusEnum = z.enum(["Pending", "Unpaid", "Partially Paid", "Paid", "Overdue"]);
+
+export const updateInvoiceSchema = createInvoiceSchema.partial().extend({
+  status: invoiceStatusEnum.optional()
+});
+
 export const recordInvoicePaymentSchema = z.object({
   amount: z.number().positive(),
   method: z.string().optional(),

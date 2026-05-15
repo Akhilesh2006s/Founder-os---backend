@@ -29,7 +29,7 @@ export async function getCalendarFeed(req, res) {
       .lean(),
     InvoiceModel.find({
       dueDate: { $gte: from, $lte: to },
-      status: { $in: ["Unpaid", "Partially Paid", "Overdue"] }
+      status: { $in: ["Pending", "Unpaid", "Partially Paid", "Overdue"] }
     })
       .select("invoiceNumber dueDate total paidAmount status clientId")
       .populate("clientId", "company")

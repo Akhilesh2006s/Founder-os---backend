@@ -23,8 +23,8 @@ const invoiceSchema = new mongoose.Schema(
     paidAmount: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ["Unpaid", "Partially Paid", "Paid", "Overdue"],
-      default: "Unpaid"
+      enum: ["Pending", "Unpaid", "Partially Paid", "Paid", "Overdue"],
+      default: "Pending"
     },
     pdfUrl: { type: String, default: "" },
     billingAddress: { type: String, default: "" },
